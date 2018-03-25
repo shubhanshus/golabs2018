@@ -16,7 +16,7 @@ import (
 
 // the 3 possible server status
 const (
-	NORMAL = iota
+	NORMAL     = iota
 	VIEWCHANGE
 	RECOVERING
 )
@@ -39,10 +39,10 @@ type PBServer struct {
 // Prepare defines the arguments for the Prepare RPC
 // Note that all field names must start with a capital letter for an RPC args struct
 type PrepareArgs struct {
-	View          int         // the primary's current view
-	PrimaryCommit int         // the primary's commitIndex
-	Index         int         // the index position at which the log entry is to be replicated on backups
-	Entry         interface{} // the log entry to be replicated
+	View          int           // the primary's current view
+	PrimaryCommit int           // the primary's commitIndex
+	Index         int           // the index position at which the log entry is to be replicated on backups
+	Entry         interface{}   // the log entry to be replicated
 	Log           []interface{} // the log of "commands"
 }
 
@@ -164,7 +164,6 @@ func (srv *PBServer) Start(command interface{}) (
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-
 	// do not process command if status is not NORMAL
 	// and if i am not the primary in the current view
 	if srv.status != NORMAL {
@@ -173,43 +172,56 @@ func (srv *PBServer) Start(command interface{}) (
 		return -1, srv.currentView, false
 	}
 	//oldLog:=srv.log
-	logIndex:=len(srv.log)
+	logIndex := len(srv.log)
+	olgLog:=srv.log
 	srv.log = append(srv.log, command)
+	cc:=command.(int)
+	if logIndex>=1{
+		logValue,valCheck:=srv.log[logIndex-1].(int)
+		if valCheck{
+			fmt.Println(logValue)
+		}
+		if  cc==logValue {
+			srv.log=olgLog
+			//fmt.Println(cc)
+		}
+	}
 
-	log.Println("start -- Primary Log",srv.log)
-	prepArgs:=PrepareArgs{
-		View:srv.currentView,
-		PrimaryCommit:srv.commitIndex,
-		Index:logIndex,
-		Entry:command,
+
+	log.Println("start -- Primary Log", srv.log)
+	prepArgs := PrepareArgs{
+		View:          srv.currentView,
+		PrimaryCommit: srv.commitIndex,
+		Index:         logIndex,
+		Entry:         command,
 		//Log:srv.log,
 	}
-	prepReply:=PrepareReply{	}
+	prepReply := PrepareReply{}
 	/*recArgs:=RecoveryArgs{
 		View: srv.currentView,
 		Server:srv.me,
 	}*/
 	//recReply:=RecoveryReply{}
-	fmt.Println("Primary Log ",srv.log)
-	countSucess:=0
-	for i:=0;i<len(srv.peers);i++{
-		if i!=srv.me{
-			ok =srv.sendPrepare(i,&prepArgs,&prepReply)
+	fmt.Println("After update Primary Log ", srv.log)
+	countSucess := 0
+	for i := 0; i < len(srv.peers); i++ {
+		if i != srv.me {
+			ok = srv.sendPrepare(i, &prepArgs, &prepReply)
 			/*if(!ok){
 				ok =srv.peers[i].Call("PBServer.Recovery", &recArgs, &recReply)
 			}*/
 		}
-		if ok==true{
-			countSucess=countSucess+1
+		if ok == true {
+			countSucess = countSucess + 1
 		}
 
 	}
-	log.Println("countSucess:",countSucess,"len(srv.peers)/2:",len(srv.peers)/2)
-	if  countSucess>=len(srv.peers)/2 {
+	log.Println("countSucess:", countSucess, "len(srv.peers)/2:", len(srv.peers)/2)
+	if countSucess >= len(srv.peers)/2 {
 		//srv.commitIndex=srv.commitIndex+1
 		srv.commitIndex = srv.commitIndex + 1
-		if logIndex>srv.commitIndex{
-			srv.commitIndex=logIndex
+		if logIndex > srv.commitIndex {
+			srv.commitIndex = logIndex
 		}
 	}
 	//}else{
@@ -243,49 +255,50 @@ func (srv *PBServer) sendPrepare(server int, args *PrepareArgs, reply *PrepareRe
 // Prepare is the RPC handler for the Prepare RPC
 func (srv *PBServer) Prepare(args *PrepareArgs, reply *PrepareReply) {
 	// Your code here
-	recArgs:=RecoveryArgs{
-		View: args.View,
-		Server:srv.me,
+	recArgs := RecoveryArgs{
+		View:   args.View,
+		Server: srv.me,
 	}
-	recReply:=RecoveryReply{}
+	recReply := RecoveryReply{}
 
-	if args.View==srv.currentView {
-		if len(srv.log)==args.Index{
-			srv.log=append(srv.log, args.Entry)
-		}else if len(srv.log)<args.Index{
+	if args.View == srv.currentView {
+		if len(srv.log) == args.Index {
+			srv.log = append(srv.log, args.Entry)
+			srv.currentView = args.View
+			srv.commitIndex = args.Index
+
+		} else if len(srv.log) < args.Index {
 			fmt.Println(" Recovery")
-			primary:=GetPrimary(args.View,len(srv.peers))
-			ok:=srv.peers[primary].Call("PBServer.Recovery",&recArgs,&recReply)
-			if ok{
-				srv.log=recReply.Entries
-				srv.currentView=recReply.View
-				srv.commitIndex=recReply.PrimaryCommit
+			primary := GetPrimary(args.View, len(srv.peers))
+			ok := srv.peers[primary].Call("PBServer.Recovery", &recArgs, &recReply)
+			if ok {
+				srv.log = recReply.Entries
+				srv.currentView = recReply.View
+				srv.commitIndex = recReply.PrimaryCommit
 			}
 
 		}
-		srv.currentView=args.View
-		srv.commitIndex=args.Index
-		reply.Success=true
-		reply.View=args.View
-		log.Println("Prepare Secondary Log: ",srv.log," server: ",srv.me)
+		reply.View = args.View
+		reply.Success = true
+		log.Println("Prepare Secondary Log: ", srv.log, " server: ", srv.me)
 		return
-	}else{
-		if args.Entry!=srv.log[args.Index]{
-			fmt.Println(" Recovery")
-			primary:=GetPrimary(args.View,len(srv.peers))
-			ok:=srv.peers[primary].Call("PBServer.Recovery",&recArgs,&recReply)
-			if ok{
-				srv.log=recReply.Entries
-				srv.currentView=recReply.View
-				srv.commitIndex=recReply.PrimaryCommit
-			}
+	} else if args.View < srv.currentView {
+		fmt.Println(" Recovery")
+		primary := GetPrimary(args.View, len(srv.peers))
+		ok := srv.peers[primary].Call("PBServer.Recovery", &recArgs, &recReply)
+		if ok {
+			srv.log = recReply.Entries
+			srv.currentView = recReply.View
+			srv.commitIndex = recReply.PrimaryCommit
 		}
-		reply.Success=true
-		reply.View=args.View
-		log.Println("Prepare Secondary Log: ",srv.log," server: ",srv.me)
-
+		reply.Success = true
+		reply.View = args.View
+		log.Println("Prepare Secondary Log: ", srv.log, " server: ", srv.me)
 		return
 	}
+	reply.Success = false
+	return
+
 }
 
 // Recovery is the RPC handler for the Recovery RPC
@@ -297,11 +310,11 @@ func (srv *PBServer) Recovery(args *RecoveryArgs, reply *RecoveryReply) {
 	//	srv.log = append(srv.log, reply.Entries)
 	//}
 	log.Println("in Recovery")
-	reply.Entries=srv.log
-	reply.PrimaryCommit=srv.commitIndex
-	reply.View=srv.currentView
-	reply.Success=true
-	log.Println("Recovery Log to be updated for server",srv.me)
+	reply.Entries = srv.log
+	reply.PrimaryCommit = srv.commitIndex
+	reply.View = srv.currentView
+	reply.Success = true
+	log.Println("Recovery Log to be updated for server", srv.me)
 	return
 }
 
@@ -330,7 +343,7 @@ func (srv *PBServer) PromptViewChange(newView int) {
 			//log.Println("server:",server,srv)
 			ok := srv.peers[server].Call("PBServer.ViewChange", vcArgs, &reply)
 			// fmt.Printf("node-%d (nReplies %d) received reply ok=%v reply=%v\n", srv.me, nReplies, ok, r.reply)
-			fmt.Println(ok," vcArgs:",vcArgs, "server:",server)
+			//fmt.Println(ok, " vcArgs:", vcArgs, "server:", server)
 			if ok {
 				vcReplyChan <- &reply
 			} else {
@@ -370,7 +383,7 @@ func (srv *PBServer) PromptViewChange(newView int) {
 				srv.peers[server].Call("PBServer.StartView", svArgs, &reply)
 			}(i)
 		}
-		fmt.Println("---After View Update Srv.Log:",srv.log,"Server: ",srv.me)
+		fmt.Println("---After View Update Srv.Log:", srv.log, "Server: ", srv.me)
 	}()
 }
 
@@ -381,39 +394,57 @@ func (srv *PBServer) PromptViewChange(newView int) {
 func (srv *PBServer) determineNewViewLog(successReplies []*ViewChangeReply) (
 	ok bool, newViewLog []interface{}) {
 	// Your code here
-	maxView:=0
-	for _,view:= range successReplies{
+	maxView := 0
+	for _, view := range successReplies {
 
-		if view.LastNormalView>maxView{
-			maxView=view.LastNormalView
-			newViewLog=view.Log
-			ok=view.Success
-		}else if view.LastNormalView==maxView{
-			if len(newViewLog)<len(view.Log){
-				newViewLog=view.Log
-				ok=view.Success
+		if view.LastNormalView > maxView {
+			maxView = view.LastNormalView
+			newViewLog = view.Log
+			ok = view.Success
+			fmt.Println("**Before update newViewLog",newViewLog,"view.Log",view.Log,"srv",srv.me)
+
+		} else if view.LastNormalView == maxView {
+			if len(newViewLog) < len(view.Log) {
+				fmt.Println("Before update newViewLog",newViewLog,"view.Log",view.Log,"srv",srv.me)
+
+				if len(view.Log)>1 {
+					logValue,valCheck:=view.Log[len(view.Log)-2].(int)
+					newlogValue,valCheck:=view.Log[len(view.Log)-1].(int)
+					if valCheck{
+						//fmt.Println(logValue)
+					}
+					if  newlogValue>logValue {
+						newViewLog = view.Log
+						//fmt.Println(cc)
+					}
+				}else{
+					newViewLog = view.Log
+				}
+				//newViewLog = view.Log
+				ok = view.Success
+
 			}
 		}
 	}
-	log.Println("maxView:",maxView," NewLog",newViewLog)
+	log.Println("Final-- maxView:", maxView, " NewLog", newViewLog,"Primary:",srv.me)
 	return ok, newViewLog
 }
 
 // ViewChange is the RPC handler to process ViewChange RPC.
 func (srv *PBServer) ViewChange(args *ViewChangeArgs, reply *ViewChangeReply) {
 	// Your code here
-	log.Println("In view Change", srv.me)
-	if args.View>srv.currentView{
-		srv.currentView=args.View
-		srv.status=VIEWCHANGE
-		reply.Success=true
-		reply.Log=srv.log
-		reply.LastNormalView=srv.lastNormalView
-		log.Println("ViewUpdated", args.View," log: ",srv.log)
+	log.Println("In view Change", srv.me," lastNormalView: ",srv.lastNormalView)
+	if args.View > srv.currentView {
+		srv.currentView = args.View
+		srv.status = VIEWCHANGE
+		reply.Success = true
+		reply.Log = srv.log
+		reply.LastNormalView = srv.lastNormalView
+		log.Println("ViewUpdated", args.View, " log: ", srv.log)
 		return
-	}else {
+	} else {
 		log.Println("false")
-		reply.Success=false
+		reply.Success = false
 		return
 	}
 
@@ -422,14 +453,14 @@ func (srv *PBServer) ViewChange(args *ViewChangeArgs, reply *ViewChangeReply) {
 // StartView is the RPC handler to process StartView RPC.
 func (srv *PBServer) StartView(args *StartViewArgs, reply *StartViewReply) {
 	// Your code here
-	log.Println("in StartView","args.View:",args.View,"CurrentView",srv.currentView)
-	if args.View>=srv.currentView {
+	log.Println("in StartView", "args.View:", args.View, "CurrentView", srv.currentView)
+	if args.View >= srv.currentView {
 		srv.status = NORMAL
-		srv.log=args.Log //verify it
-		srv.currentView=args.View
+		srv.log = args.Log //verify it
+		srv.currentView = args.View
 		//srv.lastNormalView=args.View
 		return
-	}else{
+	} else {
 		log.Println("StartView ELSE-------------")
 	}
 
