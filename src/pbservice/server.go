@@ -370,6 +370,7 @@ func (srv *PBServer) PromptViewChange(newView int) {
 				srv.peers[server].Call("PBServer.StartView", svArgs, &reply)
 			}(i)
 		}
+		fmt.Println("---After View Update Srv.Log:",srv.log,"Server: ",srv.me)
 	}()
 }
 
@@ -382,6 +383,7 @@ func (srv *PBServer) determineNewViewLog(successReplies []*ViewChangeReply) (
 	// Your code here
 	maxView:=0
 	for _,view:= range successReplies{
+
 		if view.LastNormalView>maxView{
 			maxView=view.LastNormalView
 			newViewLog=view.Log
@@ -389,11 +391,11 @@ func (srv *PBServer) determineNewViewLog(successReplies []*ViewChangeReply) (
 		}else if view.LastNormalView==maxView{
 			if len(newViewLog)<len(view.Log){
 				newViewLog=view.Log
-				maxView=view.LastNormalView
 				ok=view.Success
 			}
 		}
 	}
+	log.Println("maxView:",maxView," NewLog",newViewLog)
 	return ok, newViewLog
 }
 
@@ -420,13 +422,19 @@ func (srv *PBServer) ViewChange(args *ViewChangeArgs, reply *ViewChangeReply) {
 // StartView is the RPC handler to process StartView RPC.
 func (srv *PBServer) StartView(args *StartViewArgs, reply *StartViewReply) {
 	// Your code here
-	fmt.Println("in StartView","args.View:",args.View,"CurrentView",srv.currentView)
+	log.Println("in StartView","args.View:",args.View,"CurrentView",srv.currentView)
 	if args.View>=srv.currentView {
 		srv.status = NORMAL
 		srv.log=args.Log //verify it
+		srv.currentView=args.View
+		//srv.lastNormalView=args.View
 		return
 	}else{
-
-		log.Println("StartView Testing--------------------------------")
+		log.Println("StartView ELSE-------------")
 	}
+
+	//srv.status= NORMAL
+	//srv.log=args.Log
+	//srv.currentView=args.View
+
 }
